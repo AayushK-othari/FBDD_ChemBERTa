@@ -1,0 +1,88 @@
+# CODE TO LOAD BBBP DATASET AND PERFORM DEEPCHEM SPLIT AND THEN CONVERT TO DEEPSMILES FOR CLASSIFICATION PURPOSS
+import os
+import pandas as pd
+from rdkit import Chem
+from deepsmiles import Converter
+from deepchem.splits import ScaffoldSplitter
+from deepchem.data import NumpyDataset
+
+# ------------------------------
+# Step 1: Load BBBP CSV
+# ------------------------------
+raw_df = pd.read_csv("https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/BBBP.csv")
+raw_df = raw_df.rename(columns={"p_np": "label"})
+
+
+# ------------------------------
+# Step 2: Filter invalid SMILES
+# ------------------------------
+def is_valid_smiles(smi):
+    return Chem.MolFromSmiles(smi) is not None
+
+
+valid_mask = raw_df["smiles"].apply(is_valid_smiles)
+filtered_df = raw_df[valid_mask].reset_index(drop=True)
+print(f" Valid SMILES retained: {len(filtered_df)} / {len(raw_df)}")
+
+# ------------------------------
+# Step 3: Convert to NumpyDataset
+# ------------------------------
+dataset = NumpyDataset(
+    X=filtered_df["smiles"].values,
+    y=filtered_df["label"].values,
+    ids=filtered_df["smiles"].values
+)
+
+# ------------------------------
+# Step 4: Apply Scaffold Split
+# ------------------------------
+splitter = ScaffoldSplitter()
+train_dataset, valid_dataset, test_dataset = splitter.train_valid_test_split(dataset)
+
+# ------------------------------
+# Step 5: Convert SMILES → DeepSMILES
+# ------------------------------
+converter = Converter(rings=True, branches=True)
+
+from deepchem.data import NumpyDataset
+
+
+def smiles_to_deepsmiles(dataset):
+    new_ids = []
+    for smi in dataset.ids:
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            new_ids.append("")  # optionally handle better
+        else:
+            canonical = Chem.MolToSmiles(mol, canonical=True)
+            deepsmi = converter.encode(canonical)
+            new_ids.append(deepsmi)
+    # Return a new dataset with same features and labels, but new ids
+    return NumpyDataset(X=dataset.X, y=dataset.y, w=dataset.w, ids=new_ids)
+
+
+train_dataset = smiles_to_deepsmiles(train_dataset)
+valid_dataset = smiles_to_deepsmiles(valid_dataset)
+test_dataset = smiles_to_deepsmiles(test_dataset)
+
+# ------------------------------
+# Step 6: Save to CSV
+# ------------------------------
+os.makedirs("bbbp_deepsmiles_data", exist_ok=True)
+
+pd.DataFrame({
+    "text": train_dataset.ids,
+    "label": train_dataset.y.flatten()
+}).to_csv("bbbp_deepsmiles_data/train.csv", index=False)
+
+pd.DataFrame({
+    "text": valid_dataset.ids,
+    "label": valid_dataset.y.flatten()
+}).to_csv("bbbp_deepsmiles_data/valid.csv", index=False)
+
+pd.DataFrame({
+    "text": test_dataset.ids,
+    "label": test_dataset.y.flatten()
+}).to_csv("bbbp_deepsmiles_data/test.csv", index=False)
+
+print("DeepSMILES dataset saved to `bbbp_deepsmiles_data/`")
