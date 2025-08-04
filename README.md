@@ -12,3 +12,4 @@ We adapted components from the ChemBERTa implementation to explore masked langua
 
 Parts of this codebase are derived from [bert-loves-chemistry](https://github.com/seyonechithrananda/bert-loves-chemistry), which is licensed under the [MIT License](https://github.com/seyonechithrananda/bert-loves-chemistry/blob/master/LICENSE). We thank the authors for making their work publicly available.
 
+All related models not on this repository are available in HuggingFace at aakothari
