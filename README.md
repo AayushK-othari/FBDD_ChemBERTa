@@ -14,6 +14,6 @@ Parts of this codebase are derived from [bert-loves-chemistry](https://github.co
 
 In addition, the mTORfiles were taken from nisargrhino.
 
-All related models not on this repository are available in HuggingFace at aakothari
+All DeepBERTa models are available in HuggingFace under aakothari
 
 
