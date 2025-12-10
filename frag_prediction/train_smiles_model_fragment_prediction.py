@@ -13,7 +13,6 @@ from rdkit.Chem import AllChem
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import time
-
 import random
 from contextlib import redirect_stderr
 import shutil, json, inspect, pathlib
@@ -32,13 +31,13 @@ warnings.simplefilter("ignore")
 RDLogger.DisableLog("rdApp.*")
 
 # ───────────────────────── HYPERPARAMETERS ───────────────
-MAX_LENGTH = 64
-SEQ_PENALTY = 0.7578624550584949
-INVALID_SMILES_PENALTY = 9.959792750289285
-NUM_EPOCHS = 21
-BATCH_SIZE = 16
-#GAP_THRESHOLD = 0.05  # Stop if val_tan < train_tan - GAP_THRESHOLD
-l1_reg = 1.222171426190372e-06
+MAX_LENGTH = 96
+SEQ_PENALTY = 0.6636387385224852
+INVALID_SMILES_PENALTY = 6.834045098534338 # 9.959792750289285
+NUM_EPOCHS = 12
+BATCH_SIZE = 16 
+# GAP_THRESHOLD = 0.05  # Stop if val_tan < train_tan - GAP_THRESHOLD
+l1_reg = 3.41624379001933e-06
 patience = 4
 min_delta = 1e-3
 epochs_since_improve = 0
@@ -48,9 +47,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f'device: {device}')
 
 # ───────────────────────── LOAD DATA ─────────────────────
-train_df = pd.read_csv("mTORcanonical_deduplicated_mapped_SMILES_train.csv")
-val_df   = pd.read_csv("mTORcanonical_deduplicated_mapped_SMILES_val.csv")
-test_df  = pd.read_csv("mTORcanonical_deduplicated_mapped_SMILES_test.csv")
+train_df = pd.read_csv("mtor_medchemfrag_final_canonicalized_dedup_train_smiles.csv")
+val_df = pd.read_csv("mtor_medchemfrag_final_canonicalized_dedup_val_smiles.csv")
+test_df = pd.read_csv("mtor_medchemfrag_final_canonicalized_dedup_test_smiles.csv")
+
 
 # ───────────────────────── UTILS ─────────────────────────
 def tanimoto_similarity(sm1: str, sm2: str) -> float:
@@ -64,12 +64,14 @@ def tanimoto_similarity(sm1: str, sm2: str) -> float:
     except:
         return 0.0
 
+
 def canonical(sm: str) -> str:
     try:
         mol = Chem.MolFromSmiles(sm)
         return Chem.MolToSmiles(mol, canonical=True) if mol else sm
     except:
         return sm
+
 
 def write_error_counts_to_file(fname):
     with open(fname, "w") as f:
@@ -78,6 +80,7 @@ def write_error_counts_to_file(fname):
             for k, v in d.items():
                 f.write(f"  {k}: {v}\n")
             f.write("\n")
+
 
 # ───────────────────────── CACHED FINGERPRINTS ─────────────
 class FingerprintCache:
@@ -107,8 +110,10 @@ class FingerprintCache:
         except:
             return 0.0
 
+
 # Global fingerprint cache
 fp_cache = FingerprintCache()
+
 
 # ───────────────────────── DATASET ───────────────────────
 class SMILESDataset(Dataset):
@@ -120,8 +125,8 @@ class SMILESDataset(Dataset):
     def __len__(self): return len(self.df)
 
     def __getitem__(self, idx):
-        drug = self.df.iloc[idx]["DRUG SMILES"]
-        frag = self.df.iloc[idx]["FRAG_SMILES"]
+        drug = self.df.iloc[idx]["drug"]
+        frag = self.df.iloc[idx]["fragment"]
         if not drug:
             self.skipped += 1
             return None
@@ -135,9 +140,10 @@ class SMILESDataset(Dataset):
         item["drug_smiles"] = drug  # keep original drug for CSV
         return item
 
+
 # ───────────────────────── TOKENIZER / MODEL ─────────────
 model_path = "seyonec/ChemBERTa-zinc-base-v1"
-tokenizer  = RobertaTokenizer.from_pretrained(model_path)
+tokenizer = RobertaTokenizer.from_pretrained(model_path)
 
 # Fix potential missing pad token
 if tokenizer.pad_token is None:
@@ -145,11 +151,12 @@ if tokenizer.pad_token is None:
     print("Set pad_token to eos_token")
 
 config = RobertaConfig.from_pretrained(model_path)
-model  = RobertaForMaskedLM.from_pretrained(model_path, config=config)
+model = RobertaForMaskedLM.from_pretrained(model_path, config=config)
 model.to(device)
 
 # Allowed keys for Option A (only pass keys the model.forward accepts AND are tensors)
 allowed_keys = set(inspect.signature(model.forward).parameters.keys())
+
 
 # ───────────────────────── DATALOADERS ───────────────────
 def collate(batch):
@@ -159,18 +166,19 @@ def collate(batch):
         return None  # Signal empty batch
     return torch.utils.data.dataloader.default_collate(valid_batch)
 
+
 train_ds = SMILESDataset(train_df, tokenizer)
-val_ds   = SMILESDataset(val_df, tokenizer)
-test_ds  = SMILESDataset(test_df, tokenizer)
-train_loader = DataLoader(train_ds, BATCH_SIZE, True,  collate_fn=collate)
-val_loader   = DataLoader(val_ds,   BATCH_SIZE, False, collate_fn=collate)
-test_loader  = DataLoader(test_ds,  1,          False, collate_fn=collate)
+val_ds = SMILESDataset(val_df, tokenizer)
+test_ds = SMILESDataset(test_df, tokenizer)
+train_loader = DataLoader(train_ds, BATCH_SIZE, True, collate_fn=collate)
+val_loader = DataLoader(val_ds, BATCH_SIZE, False, collate_fn=collate)
+test_loader = DataLoader(test_ds, 1, False, collate_fn=collate)
 print("dataset sizes  train / val / test:", len(train_ds), len(val_ds), len(test_ds))
 
 # ───────────────────────── OPTIMIZER & LR SCHEDULER ──────
-total_steps  = len(train_loader) * NUM_EPOCHS
+total_steps = len(train_loader) * NUM_EPOCHS
 warmup_steps = int(0.1 * total_steps)
-optimizer = optim.AdamW(model.parameters(), lr=7.390565869611893e-05, weight_decay=1.7274484548478048e-06)
+optimizer = optim.AdamW(model.parameters(), lr=8.706020878304853e-05, weight_decay= 3.1428808908401116e-05)
 scheduler = get_linear_schedule_with_warmup(optimizer, warmup_steps, total_steps)
 
 # ───────────────────────── ERROR BUCKETING ───────────────
@@ -178,6 +186,7 @@ error_counts = {ph: {k: 0 for k in ["unclosed ring", "duplicated ring closure", 
                                     "extra open parentheses", "non-ring atom", "can't kekulize", "other"]}
                 for ph in ["train", "val", "test"]}
 error_msgs = []
+
 
 def _bucket(msg, phase):
     d = error_counts[phase]
@@ -198,6 +207,7 @@ def _bucket(msg, phase):
         d["other"] += 1
         error_msgs.append(msg.strip())
 
+
 def is_valid_smiles(sm, phase):
     """Improved SMILES validation with proper sanitization"""
     try:
@@ -207,18 +217,20 @@ def is_valid_smiles(sm, phase):
         _bucket(str(e), phase)
         return False
 
+
 # Pre-compute true fragment fingerprints for efficiency
 def precompute_true_fingerprints(df):
     """Pre-cache fingerprints for all true SMILES to avoid repeated computation"""
     print("Pre-computing true fragment fingerprints...")
     for _, row in tqdm(df.iterrows(), total=len(df), desc="Caching fingerprints"):
-        frag_smiles = row["FRAG_SMILES"]
+        frag_smiles = row["fragment"]
         if frag_smiles:
             canon_frag = canonical(frag_smiles)
             fp_cache.get_fingerprint(canon_frag)
 
+
 # ───────────────────────── TRAINING ──────────────────────
-start_time     = time.time()
+start_time = time.time()
 formatted_time = datetime.now().strftime('%y-%m-%d-%H-%M-%S')
 
 precompute_true_fingerprints(train_df)
@@ -259,7 +271,7 @@ for ep in range(NUM_EPOCHS):
 
         # Invalid penalty
         invalid_count = sum(not is_valid_smiles(p, "train") for p in pred_smi)
-        invalid_frac  = invalid_count / len(pred_smi) if len(pred_smi) > 0 else 0.0
+        invalid_frac = invalid_count / len(pred_smi) if len(pred_smi) > 0 else 0.0
         loss = loss * (1.0 + INVALID_SMILES_PENALTY * invalid_frac)
 
         loss.backward()
@@ -309,7 +321,7 @@ for ep in range(NUM_EPOCHS):
 
     print(f"Epoch {ep + 1} | Val Invalid SMILES: {total_val_invalid}/{len(val_ds)}")
 
-    mean_val_tan  = np.mean(v_sims) if v_sims else 0.0
+    mean_val_tan = np.mean(v_sims) if v_sims else 0.0
     mean_val_loss = np.mean(v_losses) if v_losses else float('inf')
     val_losses.append(mean_val_loss)
     val_ep_tan.append(mean_val_tan)
@@ -342,7 +354,7 @@ model = RobertaForMaskedLM.from_pretrained("best_model_checkpoint", config=confi
 tokenizer = RobertaTokenizer.from_pretrained("best_model_checkpoint")
 
 true_vals, pred_vals, test_losses, tanimoto_scores = [], [], [], []
-drug_vals = []   # collect drugs in-order (no printing)
+drug_vals = []  # collect drugs in-order (no printing)
 valid_flags = []
 
 model.eval()
@@ -361,8 +373,8 @@ with torch.no_grad():
         pred_smi = tokenizer.batch_decode(preds, skip_special_tokens=True)
         true_smi = batch["actual_fragment_smiles"]
 
-        drug_smi   = batch["drug_smiles"]                 # list of strings
-        canon_drug = [canonical(d) for d in drug_smi]     # canonicalize for consistency
+        drug_smi = batch["drug_smiles"]  # list of strings
+        canon_drug = [canonical(d) for d in drug_smi]  # canonicalize for consistency
         drug_vals.extend(canon_drug)
 
         # Canonicalize predictions/truth
@@ -375,8 +387,8 @@ with torch.no_grad():
 
         base_loss = SEQ_PENALTY * out.loss
         invalid_count = sum(not is_valid_smiles(p, "test") for p in pred_smi)
-        invalid_frac  = invalid_count / len(pred_smi) if len(pred_smi) > 0 else 0.0
-        total_loss    = base_loss * (1.0 + INVALID_SMILES_PENALTY * invalid_frac)
+        invalid_frac = invalid_count / len(pred_smi) if len(pred_smi) > 0 else 0.0
+        total_loss = base_loss * (1.0 + INVALID_SMILES_PENALTY * invalid_frac)
 
         true_vals.extend(canon_true)
         pred_vals.extend(canon_pred)
@@ -389,11 +401,11 @@ print(f"Mean Test Tanimoto Similarity: {np.mean(tanimoto_scores):.3f}")
 ckpt_dir = pathlib.Path(f"checkpoint_{formatted_time}")
 ckpt_dir.mkdir(parents=True, exist_ok=True)
 pd.DataFrame({
-    "drug":    drug_vals,
-    "true":    true_vals,
-    "pred":    pred_vals,
-    "loss":    test_losses,
-    "valid":   [is_valid_smiles(p, "test") for p in pred_vals],
+    "drug": drug_vals,
+    "true": true_vals,
+    "pred": pred_vals,
+    "loss": test_losses,
+    "valid": [is_valid_smiles(p, "test") for p in pred_vals],
     "tanimoto": tanimoto_scores
 }).to_csv(ckpt_dir / "test_preds.csv", index=False)
 
@@ -406,7 +418,7 @@ with open(ckpt_dir / "run_args.json", "w") as f:
         "max_length": MAX_LENGTH,
         "seq_penalty": SEQ_PENALTY,
         "invalid_smiles_penalty": INVALID_SMILES_PENALTY,
-     #   "gap_threshold": GAP_THRESHOLD,
+        #   "gap_threshold": GAP_THRESHOLD,
         "time": formatted_time
     }, f, indent=2)
 
@@ -425,13 +437,13 @@ except Exception as e:
 import matplotlib.pyplot as plt
 
 plt.rcParams.update({
-    'font.size':         12,
-    'axes.titlesize':    14,
-    'axes.labelsize':    12,
-    'xtick.labelsize':   11,
-    'ytick.labelsize':   11,
-    'legend.fontsize':   10,
-    'lines.linewidth':   2,
+    'font.size': 12,
+    'axes.titlesize': 14,
+    'axes.labelsize': 12,
+    'xtick.labelsize': 11,
+    'ytick.labelsize': 11,
+    'legend.fontsize': 10,
+    'lines.linewidth': 2,
 })
 
 fig, axes = plt.subplots(1, 2, figsize=(14, 6))
@@ -440,8 +452,8 @@ for ax in axes:
     ax.spines['top'].set_visible(False)
 
 # Loss
-axes[0].plot(range(1, len(train_losses)+1), train_losses, marker='o', label='Train')
-axes[0].plot(range(1, len(val_losses)+1),   val_losses,   marker='s', label='Validation')
+axes[0].plot(range(1, len(train_losses) + 1), train_losses, marker='o', label='Train')
+axes[0].plot(range(1, len(val_losses) + 1), val_losses, marker='s', label='Validation')
 axes[0].set_title('Epoch Loss')
 axes[0].set_xlabel('Epoch')
 axes[0].set_ylabel('Loss')
@@ -449,8 +461,8 @@ axes[0].grid(axis='y', linestyle='--', alpha=0.5)
 axes[0].legend(loc='upper right')
 
 # Tanimoto
-axes[1].plot(range(1, len(train_ep_tan)+1), train_ep_tan, marker='o', label='Train')
-axes[1].plot(range(1, len(val_ep_tan)+1),   val_ep_tan,   marker='s', label='Validation')
+axes[1].plot(range(1, len(train_ep_tan) + 1), train_ep_tan, marker='o', label='Train')
+axes[1].plot(range(1, len(val_ep_tan) + 1), val_ep_tan, marker='s', label='Validation')
 axes[1].set_title('Mean Tanimoto Similarity')
 axes[1].set_xlabel('Epoch')
 axes[1].set_ylabel('Tanimoto Similarity')
