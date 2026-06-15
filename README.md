@@ -26,7 +26,3 @@ If you use DeepBERTa or any models derived from it in your research, please cite
 ```
 
 Paper: https://www.researchsquare.com/article/rs-9614513/v1
-
-This pretrained DeepBERTa model was used as the foundation for the DeepBERTa-RL framework described in the paper.
-
-
