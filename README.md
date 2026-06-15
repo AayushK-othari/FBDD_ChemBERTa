@@ -13,10 +13,9 @@ We adapted components from the ChemBERTa implementation to explore masked langua
 
 All DeepBERTa models and fragment prediction models are available in HuggingFace under aakothari
 
-```
 If you use DeepBERTa or any models derived from it in your research, please cite:
 
-```bibtex
+```
 @article{kothari2026deepberta,
   title={DeepBERTa-RL: Reinforcement Learning for Fragment Prediction in Fragment-Based Drug Discovery Using DeepSMILES Molecular Representations},
   author={Kothari, Aayush and others},
