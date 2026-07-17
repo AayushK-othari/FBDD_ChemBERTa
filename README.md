@@ -5,6 +5,22 @@ Using transfer learning to help in Fragment Based Drug Discovery.
 - This project builds on bert-loves-chemistry by Seyone Chithrananda et al.
 Original license: MIT
 
+Data generation instructions:
+
+Dependencies:
+- Python 3.11
+- RDKit, Pandas
+- UniDock 1.1.3
+- OBabel 3.1.1
+
+
+Example generation:
+
+python3.11 split_datasets.py --target_file ./mTORcanonical.csv --fragmentation_mode recap --protein mtor
+chmod +x gendata_run_mtor_recap.sh
+./gendata_run_mtor_recap.sh
+python3.11 combine_dataset_chunks.py --fragmentation_mode recap --protein mtor --clean_fragments true
+
 
 This repository contains code and data for our research on applying transformer models to chemical SMILES data. It builds upon the excellent work from [bert-loves-chemistry](https://github.com/seyonechithrananda/bert-loves-chemistry) by Seyone Chithrananda et al.
 
